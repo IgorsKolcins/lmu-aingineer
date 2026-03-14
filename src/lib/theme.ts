@@ -1,31 +1,10 @@
-import { useSyncExternalStore } from "react";
-
-const themeValues = ["light", "dark", "system"] as const;
-
-export type Theme = (typeof themeValues)[number];
-
-export const isTheme = (value: unknown): value is Theme =>
-  themeValues.includes(value as Theme);
-
-declare global {
-  interface Window {
-    theme?: {
-      getTheme: () => Promise<Theme>;
-      setTheme: (theme: Theme) => Promise<void>;
-    };
-  }
-}
+import { useSetting } from "./settings/client";
+import type { Theme } from "./settings/schema";
 
 const mediaQuery = () => window.matchMedia("(prefers-color-scheme: dark)");
 
 let currentTheme: Theme = "system";
 let stopWatchingSystemTheme = () => {};
-
-const listeners = new Set<() => void>();
-
-const notify = () => {
-  listeners.forEach((listener) => listener());
-};
 
 const getSystemTheme = () => (mediaQuery().matches ? "dark" : "light");
 
@@ -52,36 +31,25 @@ const watchSystemTheme = () => {
   };
 };
 
-export const initializeTheme = async () => {
-  const storedTheme = await window.theme
-    ?.getTheme?.()
-    .catch(() => "system" satisfies Theme);
-
-  currentTheme = isTheme(storedTheme) ? storedTheme : "system";
+export const syncTheme = (theme: Theme) => {
+  currentTheme = theme;
   applyTheme(currentTheme);
   watchSystemTheme();
 };
 
-const subscribe = (listener: () => void) => {
-  listeners.add(listener);
-
-  return () => {
-    listeners.delete(listener);
-  };
-};
-
-const getSnapshot = () => currentTheme;
-
-export const setTheme = async (theme: Theme) => {
-  currentTheme = theme;
-  applyTheme(theme);
-  watchSystemTheme();
-  notify();
-  await window.theme?.setTheme?.(theme);
+export const initializeTheme = (theme: Theme) => {
+  syncTheme(theme);
 };
 
 export const useTheme = () => {
-  const theme = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const [theme, setStoredTheme] = useSetting("theme");
+
+  const setTheme = async (nextTheme: Theme) => {
+    syncTheme(nextTheme);
+
+    const persistedTheme = await setStoredTheme(nextTheme);
+    syncTheme(persistedTheme);
+  };
 
   return { theme, setTheme };
 };

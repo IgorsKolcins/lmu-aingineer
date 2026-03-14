@@ -1,6 +1,7 @@
 import { Link, Outlet, createRootRoute } from "@tanstack/react-router";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { isTheme, useTheme } from "@/lib/theme";
+import { isTheme } from "@/lib/settings/schema";
+import { useTheme } from "@/lib/theme";
 
 const themeOptions = [
   { value: "light", label: "Light" },

@@ -1,27 +1,16 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import Store from "electron-store";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { devServerUrl } from "./env.ts";
+import { getSettings, setSetting } from "./src/lib/settings/main.ts";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const isDev = process.env.NODE_ENV === "development";
-const themeValues = ["light", "dark", "system"] as const;
-type Theme = (typeof themeValues)[number];
 
-const parseTheme = (value: unknown): Theme =>
-  themeValues.includes(value as Theme) ? (value as Theme) : "system";
-
-const store = new Store<{ theme: Theme }>({
-  defaults: {
-    theme: "system",
-  },
-});
-
-ipcMain.handle("theme:get", () => parseTheme(store.get("theme")));
-ipcMain.handle("theme:set", (_event, value: unknown) => {
-  store.set("theme", parseTheme(value));
-});
+ipcMain.handle("settings:get", () => getSettings());
+ipcMain.handle("settings:set", (_event, key: unknown, value: unknown) =>
+  setSetting(key, value),
+);
 
 const createWindow = () => {
   const window = new BrowserWindow({

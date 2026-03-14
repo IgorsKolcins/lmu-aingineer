@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { initializeTheme } from "./lib/theme";
+import { initializeSettings } from "./lib/settings/client";
 import { router } from "./router";
 import "./styles.css";
 
@@ -11,7 +12,8 @@ if (!rootElement) {
   throw new Error("Missing root element");
 }
 
-await initializeTheme();
+const settings = await initializeSettings();
+initializeTheme(settings.theme);
 
 createRoot(rootElement).render(
   <StrictMode>
