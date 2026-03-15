@@ -1,17 +1,29 @@
 import { readFile } from "node:fs/promises";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, type Content } from "@google/genai";
+import type { ChatMessage } from "../chats/types.ts";
 import { getSettings } from "../settings/main.ts";
-import {
-  askAboutFileRequestSchema,
-  askAboutFileResponseSchema,
-} from "./types.ts";
 
-const geminiModel = "gemini-2.5-flash";
 const binaryByteLimit = 8_000;
 const binaryCharacter = 0;
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
-const readGeminiApiKey = () => {
+const systemInstruction = `You are editing a Le Mans Ultimate car setup file with the .svm extension.
+Apply the user's requested setup changes directly to the full file contents.
+Return a very structured response using this exact shape:
+
+Description of the changes
+<plain-language summary of what you changed>
+<<<FILE
+<full updated .svm file contents>
+FILE
+
+Rules:
+- Return exactly one file block.
+- The file block must contain the complete updated .svm file, not a patch or partial snippet.
+- Do not add commentary after the closing FILE marker.
+- Preserve existing values unless the requested change requires an update.`;
+
+export const readGeminiApiKey = () => {
   const apiKey = getSettings().geminiApiKey;
 
   if (!apiKey) {
@@ -27,7 +39,7 @@ const assertTextFile = (buffer: Buffer) => {
   }
 };
 
-const readPlainTextFile = async (path: string) => {
+export const readPlainTextFile = async (path: string) => {
   let fileBuffer: Buffer;
 
   try {
@@ -47,7 +59,7 @@ const readPlainTextFile = async (path: string) => {
 
 const fileBlockPattern = /^<<<FILE\s*\n([\s\S]*?)\nFILE\s*$/m;
 
-const parseStructuredResponse = (text: string) => {
+export const parseStructuredResponse = (text: string) => {
   const matches = [...text.matchAll(/<<<FILE\s*\n[\s\S]*?\nFILE\s*/gm)];
 
   if (matches.length === 0) {
@@ -87,37 +99,62 @@ const parseStructuredResponse = (text: string) => {
 const buildPrompt = ({
   prompt,
   file,
-  fileContents,
+  workingFileContents,
 }: {
   prompt: string;
   file: { name: string; path: string };
-  fileContents: string;
-}) => `You are editing a Le Mans Ultimate car setup file with the .svm extension.
-Apply the user's requested setup changes directly to the full file contents.
-Return a very structured response using this exact shape:
-
-Description of the changes
-<plain-language summary of what you changed>
-<<<FILE
-<full updated .svm file contents>
-FILE
-
-Rules:
-- Return exactly one file block.
-- The file block must contain the complete updated .svm file, not a patch or partial snippet.
-- Do not add commentary after the closing FILE marker.
-- Preserve existing values unless the requested change requires an update.
-
-User request:
+  workingFileContents: string;
+}) => `User request:
 ${prompt}
 
-File name: ${file.name}
-File path: ${file.path}
+Target file name: ${file.name}
+Target file path: ${file.path}
 
-File contents:
+Current working file contents:
 <<<FILE
-${fileContents}
+${workingFileContents}
 FILE`;
+
+export const buildConversationContents = ({
+  file,
+  prompt,
+  workingFileContents,
+  messages,
+}: {
+  file: { name: string; path: string };
+  prompt: string;
+  workingFileContents: string;
+  messages: ChatMessage[];
+}) => {
+  const history = messages.reduce<Content[]>((accumulator, message) => {
+    if (message.role === "assistant" && message.error) {
+      return accumulator;
+    }
+
+    accumulator.push({
+      role: message.role === "assistant" ? "model" : "user",
+      parts: [{ text: message.text }],
+    });
+
+    return accumulator;
+  }, []);
+
+  return [
+    ...history,
+    {
+      role: "user",
+      parts: [
+        {
+          text: buildPrompt({
+            prompt,
+            file,
+            workingFileContents,
+          }),
+        },
+      ],
+    },
+  ];
+};
 
 const parseRetryDelaySeconds = (error: unknown) => {
   if (!error || typeof error !== "object" || !("details" in error)) {
@@ -147,7 +184,7 @@ const parseRetryDelaySeconds = (error: unknown) => {
   return Number.isFinite(seconds) ? seconds : null;
 };
 
-const toAiError = (error: unknown) => {
+export const toAiError = (error: unknown) => {
   if (!error || typeof error !== "object") {
     return new Error("Unable to get a response from Gemini.");
   }
@@ -186,48 +223,23 @@ const toAiError = (error: unknown) => {
   return new Error("Unable to get a response from Gemini.");
 };
 
-export const askAboutFile = async (request: unknown) => {
-  try {
-    const { file, prompt } = askAboutFileRequestSchema.parse(request);
-    const apiKey = readGeminiApiKey();
-    const fileContents = await readPlainTextFile(file.path);
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models
-      .generateContent({
-        model: geminiModel,
-        contents: buildPrompt({
-          prompt,
-          file,
-          fileContents,
-        }),
-      })
-      .catch((error) => {
-        throw toAiError(error);
-      });
-    const text = response.text?.trim();
+export const requestSetupUpdate = ({
+  apiKey,
+  model,
+  contents,
+}: {
+  apiKey: string;
+  model: string;
+  contents: Content[];
+}) => {
+  const ai = new GoogleGenAI({ apiKey });
 
-    if (!text) {
-      throw new Error("Gemini returned an empty response.");
-    }
-
-    const parsedResponse = parseStructuredResponse(text);
-
-    return askAboutFileResponseSchema.parse({
-      text,
-      description: parsedResponse.description,
-      fileContents: parsedResponse.fileContents,
-      originalFileContents: fileContents,
-      parseError: parsedResponse.parseError,
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unable to get a response from Gemini.";
-
-    return askAboutFileResponseSchema.parse({
-      text: "",
-      error: message,
-    });
-  }
+  return ai.models.generateContent({
+    model,
+    contents,
+    config: {
+      systemInstruction,
+      temperature: 0.3,
+    },
+  });
 };

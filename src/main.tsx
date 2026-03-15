@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
+import { initializeChats } from "./lib/chats/client";
 import { initializeTheme } from "./lib/theme";
 import { initializeSettings } from "./lib/settings/client";
 import { router } from "./router";
@@ -13,6 +14,7 @@ if (!rootElement) {
 }
 
 const settings = await initializeSettings();
+await initializeChats();
 initializeTheme(settings.theme);
 
 createRoot(rootElement).render(

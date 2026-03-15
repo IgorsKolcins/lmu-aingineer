@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld("files", {
     ipcRenderer.invoke("files:save-generated", request),
 });
 
-contextBridge.exposeInMainWorld("ai", {
-  askAboutFile: (request) => ipcRenderer.invoke("ai:ask-about-file", request),
+contextBridge.exposeInMainWorld("chats", {
+  listChats: () => ipcRenderer.invoke("chats:list"),
+  getChat: (request) => ipcRenderer.invoke("chats:get", request),
+  createChat: (request) => ipcRenderer.invoke("chats:create", request),
+  setActiveChat: (request) => ipcRenderer.invoke("chats:set-active", request),
+  deleteChat: (request) => ipcRenderer.invoke("chats:delete", request),
+  sendMessage: (request) => ipcRenderer.invoke("chats:send-message", request),
 });
