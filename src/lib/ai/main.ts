@@ -12,7 +12,7 @@ Apply the user's requested setup changes directly to the full file contents.
 Return a very structured response using this exact shape:
 
 Description of the changes
-<plain-language summary of what you changed>
+- <setting name> changed: <old value> > <new value>. <what this changes in the car and how it will affect the driving>
 <<<FILE
 <full updated .svm file contents>
 FILE
@@ -21,7 +21,13 @@ Rules:
 - Return exactly one file block.
 - The file block must contain the complete updated .svm file, not a patch or partial snippet.
 - Do not add commentary after the closing FILE marker.
-- Preserve existing values unless the requested change requires an update.`;
+- Preserve existing values unless the requested change requires an update.
+- In the description section, use plain text only.
+- Every bullet in the description section must start with "- ".
+- Mention every individual changed line or value from the file in its own bullet.
+- Do not group multiple file changes into one bullet if that would hide an individual changed line or value.
+- Each bullet must include the setting name, the previous value, the new value, and the practical handling or driving effect of that exact change.
+- Do not mention unchanged values in the description.`;
 
 export const readGeminiApiKey = () => {
   const apiKey = getSettings().geminiApiKey;

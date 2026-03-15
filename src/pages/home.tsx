@@ -63,7 +63,7 @@ const AssistantMessage = ({
           <RiSparklingLine className="size-4" />
           Assistant
         </div>
-        <CardDescription className="text-sm leading-relaxed text-foreground">
+        <CardDescription className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
           {body}
         </CardDescription>
       </CardHeader>
