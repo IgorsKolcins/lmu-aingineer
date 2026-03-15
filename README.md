@@ -34,10 +34,28 @@ To build the renderer:
 bun run build
 ```
 
+To build the renderer and Electron main process for production:
+
+```bash
+bun run build:app
+```
+
 To start Electron against the built app:
 
 ```bash
 bun run start
 ```
+
+To build a Windows portable `.exe` on a Windows machine:
+
+```bash
+bun run dist:win:portable
+```
+
+Windows packaging notes:
+
+- Add a real Windows icon file at `build/icon.ico` before packaging.
+- The portable `.exe` is written to `release/`.
+- Build the Windows artifact on Windows for the most reliable native module and packaging behavior.
 
 This project was created using `bun init` in bun v1.3.3. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.

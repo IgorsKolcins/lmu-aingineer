@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain } from "electron";
 import {
@@ -18,7 +18,18 @@ import {
 import { getSettings, setSetting } from "./src/lib/settings/main.ts";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const isDev = process.env.NODE_ENV === "development";
+const appRoot =
+  basename(__dirname) === "dist-electron" ? join(__dirname, "..") : __dirname;
+const electronDir =
+  basename(__dirname) === "dist-electron" ? __dirname : appRoot;
+const rendererUrl = process.env.ELECTRON_RENDERER_URL?.trim() || null;
+const isDev = Boolean(rendererUrl);
+
+app.setName("LMU AIngineer");
+
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.lmu.aingineer");
+}
 
 ipcMain.handle("files:open", (event, options: unknown) =>
   openFile(BrowserWindow.fromWebContents(event.sender), options),
@@ -55,17 +66,17 @@ const createWindow = () => {
     minWidth: 800,
     webPreferences: {
       contextIsolation: true,
-      preload: join(__dirname, "preload.cjs"),
+      preload: join(electronDir, "preload.cjs"),
     },
   });
 
   if (isDev) {
-    window.loadURL(devServerUrl);
+    window.loadURL(rendererUrl ?? devServerUrl);
     window.webContents.openDevTools({ mode: "detach" });
     return;
   }
 
-  window.loadFile(join(__dirname, "dist", "index.html"));
+  window.loadFile(join(appRoot, "dist", "index.html"));
 };
 
 app.whenReady().then(() => {

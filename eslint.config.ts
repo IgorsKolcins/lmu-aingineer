@@ -8,7 +8,7 @@ const reactConfig = pluginReact.configs.flat?.recommended;
 
 export default defineConfig([
   {
-    ignores: ["dist", "src/routeTree.gen.ts"],
+    ignores: ["dist", "dist-electron", "src/routeTree.gen.ts"],
   },
   {
     files: ["**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"],

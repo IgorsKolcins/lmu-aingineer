@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import process from "node:process";
 import waitOn from "wait-on";
-import { host, port } from "../env.ts";
+import { devServerUrl, host, port } from "../env.ts";
 
 const isPortAvailable = () =>
   new Promise<boolean>((resolve) => {
@@ -52,7 +52,7 @@ const run = async () => {
   });
 
   const electron = spawn("bun", ["x", "electron", "."], {
-    env: { ...process.env, NODE_ENV: "development" },
+    env: { ...process.env, ELECTRON_RENDERER_URL: devServerUrl },
     stdio: "inherit",
   });
 
