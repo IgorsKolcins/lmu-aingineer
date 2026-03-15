@@ -3,9 +3,18 @@ import { z } from "zod";
 export const themeSchema = z
   .enum(["light", "dark", "system"])
   .default("system");
+export const fileSaveFolderSchema = z.string().min(1).nullable().default(null);
+export const geminiApiKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .nullable()
+  .default(null);
 
 const settingSchemas = {
   theme: themeSchema,
+  fileSaveFolder: fileSaveFolderSchema,
+  geminiApiKey: geminiApiKeySchema,
 } as const;
 
 export const settingsSchema = z.object(settingSchemas);
@@ -30,6 +39,10 @@ export const isTheme = (value: unknown): value is Theme =>
 const settingParsers = {
   theme: (value: unknown) =>
     themeSchema.catch(defaultSettings.theme).parse(value),
+  fileSaveFolder: (value: unknown) =>
+    fileSaveFolderSchema.catch(defaultSettings.fileSaveFolder).parse(value),
+  geminiApiKey: (value: unknown) =>
+    geminiApiKeySchema.catch(defaultSettings.geminiApiKey).parse(value),
 } satisfies {
   [K in SettingKey]: (value: unknown) => AppSettings[K];
 };

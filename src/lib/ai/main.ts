@@ -1,0 +1,233 @@
+import { readFile } from "node:fs/promises";
+import { GoogleGenAI } from "@google/genai";
+import { getSettings } from "../settings/main.ts";
+import {
+  askAboutFileRequestSchema,
+  askAboutFileResponseSchema,
+} from "./types.ts";
+
+const geminiModel = "gemini-2.5-flash";
+const binaryByteLimit = 8_000;
+const binaryCharacter = 0;
+const textDecoder = new TextDecoder("utf-8", { fatal: true });
+
+const readGeminiApiKey = () => {
+  const apiKey = getSettings().geminiApiKey;
+
+  if (!apiKey) {
+    throw new Error("Add your Gemini API key in Settings before generating.");
+  }
+
+  return apiKey;
+};
+
+const assertTextFile = (buffer: Buffer) => {
+  if (buffer.subarray(0, binaryByteLimit).includes(binaryCharacter)) {
+    throw new Error("The selected file could not be read as plain text.");
+  }
+};
+
+const readPlainTextFile = async (path: string) => {
+  let fileBuffer: Buffer;
+
+  try {
+    fileBuffer = await readFile(path);
+  } catch {
+    throw new Error("The selected file could not be read.");
+  }
+
+  assertTextFile(fileBuffer);
+
+  try {
+    return textDecoder.decode(fileBuffer);
+  } catch {
+    throw new Error("The selected file is not valid UTF-8 plain text.");
+  }
+};
+
+const fileBlockPattern = /^<<<FILE\s*\n([\s\S]*?)\nFILE\s*$/m;
+
+const parseStructuredResponse = (text: string) => {
+  const matches = [...text.matchAll(/<<<FILE\s*\n[\s\S]*?\nFILE\s*/gm)];
+
+  if (matches.length === 0) {
+    return {
+      description: text,
+      parseError:
+        "Gemini did not include a valid setup file block. Ask it to return the full `.svm` contents inside `<<<FILE` and `FILE`.",
+    };
+  }
+
+  if (matches.length > 1) {
+    return {
+      description: text.replace(/<<<FILE\s*\n[\s\S]*?\nFILE\s*/gm, "").trim(),
+      parseError:
+        "Gemini returned multiple setup file blocks. Ask it to return exactly one full `.svm` file.",
+    };
+  }
+
+  const fileMatch = text.match(fileBlockPattern);
+
+  if (!fileMatch) {
+    return {
+      description: text.replace(/<<<FILE[\s\S]*/m, "").trim() || text,
+      parseError:
+        "Gemini returned a malformed setup file block. Ask it to wrap the full `.svm` file between `<<<FILE` and `FILE`.",
+    };
+  }
+
+  const description = text.replace(fileBlockPattern, "").trim();
+
+  return {
+    description: description || "Updated setup generated.",
+    fileContents: fileMatch[1],
+  };
+};
+
+const buildPrompt = ({
+  prompt,
+  file,
+  fileContents,
+}: {
+  prompt: string;
+  file: { name: string; path: string };
+  fileContents: string;
+}) => `You are editing a Le Mans Ultimate car setup file with the .svm extension.
+Apply the user's requested setup changes directly to the full file contents.
+Return a very structured response using this exact shape:
+
+Description of the changes
+<plain-language summary of what you changed>
+<<<FILE
+<full updated .svm file contents>
+FILE
+
+Rules:
+- Return exactly one file block.
+- The file block must contain the complete updated .svm file, not a patch or partial snippet.
+- Do not add commentary after the closing FILE marker.
+- Preserve existing values unless the requested change requires an update.
+
+User request:
+${prompt}
+
+File name: ${file.name}
+File path: ${file.path}
+
+File contents:
+<<<FILE
+${fileContents}
+FILE`;
+
+const parseRetryDelaySeconds = (error: unknown) => {
+  if (!error || typeof error !== "object" || !("details" in error)) {
+    return null;
+  }
+
+  const { details } = error;
+
+  if (!Array.isArray(details)) {
+    return null;
+  }
+
+  const retryInfo = details.find(
+    (detail) =>
+      detail &&
+      typeof detail === "object" &&
+      detail["@type"] === "type.googleapis.com/google.rpc.RetryInfo" &&
+      typeof detail.retryDelay === "string",
+  );
+
+  if (!retryInfo) {
+    return null;
+  }
+
+  const seconds = Number.parseInt(retryInfo.retryDelay, 10);
+
+  return Number.isFinite(seconds) ? seconds : null;
+};
+
+const toAiError = (error: unknown) => {
+  if (!error || typeof error !== "object") {
+    return new Error("Unable to get a response from Gemini.");
+  }
+
+  const status = "status" in error ? error.status : null;
+  const message =
+    "message" in error && typeof error.message === "string"
+      ? error.message
+      : "";
+  const retryDelaySeconds = parseRetryDelaySeconds(error);
+  const hasQuotaError =
+    status === 429 ||
+    message.includes("RESOURCE_EXHAUSTED") ||
+    message.includes("Quota exceeded");
+
+  if (hasQuotaError) {
+    const retryMessage = retryDelaySeconds
+      ? ` Please wait about ${retryDelaySeconds} seconds and try again.`
+      : " Please try again shortly.";
+
+    return new Error(
+      `Gemini quota is currently exhausted for this API key.${retryMessage}`,
+    );
+  }
+
+  if (status === 401 || status === 403) {
+    return new Error(
+      "Gemini rejected the API key. Check the key in Settings and confirm billing access.",
+    );
+  }
+
+  if (message) {
+    return new Error(`Gemini request failed: ${message}`);
+  }
+
+  return new Error("Unable to get a response from Gemini.");
+};
+
+export const askAboutFile = async (request: unknown) => {
+  try {
+    const { file, prompt } = askAboutFileRequestSchema.parse(request);
+    const apiKey = readGeminiApiKey();
+    const fileContents = await readPlainTextFile(file.path);
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models
+      .generateContent({
+        model: geminiModel,
+        contents: buildPrompt({
+          prompt,
+          file,
+          fileContents,
+        }),
+      })
+      .catch((error) => {
+        throw toAiError(error);
+      });
+    const text = response.text?.trim();
+
+    if (!text) {
+      throw new Error("Gemini returned an empty response.");
+    }
+
+    const parsedResponse = parseStructuredResponse(text);
+
+    return askAboutFileResponseSchema.parse({
+      text,
+      description: parsedResponse.description,
+      fileContents: parsedResponse.fileContents,
+      originalFileContents: fileContents,
+      parseError: parsedResponse.parseError,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unable to get a response from Gemini.";
+
+    return askAboutFileResponseSchema.parse({
+      text: "",
+      error: message,
+    });
+  }
+};

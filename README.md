@@ -19,6 +19,9 @@ HOST=127.0.0.1
 PORT=5173
 ```
 
+After the app starts, open Settings and paste your Gemini API key there before
+using AI setup generation.
+
 To run in development:
 
 ```bash
