@@ -34,6 +34,7 @@ const createWindow = () => {
   const window = new BrowserWindow({
     width: 900,
     height: 700,
+    minWidth: 800,
     webPreferences: {
       contextIsolation: true,
       preload: join(__dirname, "preload.cjs"),
