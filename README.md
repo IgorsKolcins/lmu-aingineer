@@ -14,9 +14,6 @@ App uses Google Gemini 2.5 Flash in a free plan.
 3. Open .exe file
 4. Go to the settings and enter your API key
 
-> [!WARNING]  
-> You must create a new API key in [Google AI Studio](https://aistudio.google.com/api-keys)
-
 [LMU AIngineer (alpha)](https://github.com/user-attachments/assets/cc26f485-3339-4bd7-a33a-3c5115ded803)
 
 ## For developers
