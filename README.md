@@ -46,7 +46,7 @@ To start Electron against the built app:
 bun run start
 ```
 
-To build a Windows portable `.exe` on a Windows machine:
+To build a Windows x64 portable `.exe`:
 
 ```bash
 bun run dist:win:portable
@@ -56,6 +56,7 @@ Windows packaging notes:
 
 - Add a real Windows icon file at `build/icon.ico` before packaging.
 - The portable `.exe` is written to `release/`.
+- `bun run dist:win:portable` explicitly targets Windows `x64`, even when run on Apple Silicon.
 - Build the Windows artifact on Windows for the most reliable native module and packaging behavior.
 
 This project was created using `bun init` in bun v1.3.3. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.

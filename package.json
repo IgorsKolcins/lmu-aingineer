@@ -1,10 +1,11 @@
 {
   "name": "aingineer",
+  "version": "0.1.0",
   "type": "module",
   "private": true,
   "main": "main.ts",
   "scripts": {
-    "postinstall": "bun run rebuild:native",
+    "postinstall": "electron-builder install-app-deps",
     "predev": "bun run rebuild:native",
     "dev": "bun run ./scripts/Dev.ts",
     "build:electron": "bun build ./main.ts --outfile ./dist-electron/main.js --target=node --format=esm --external electron --external better-sqlite3 && bun build ./preload.cjs --outfile ./dist-electron/preload.cjs --target=node --format=cjs --external electron",
@@ -12,7 +13,7 @@
     "build:app": "bun run build && bun run build:electron",
     "prestart": "bun run build:app",
     "start": "electron ./dist-electron/main.js",
-    "dist:win:portable": "bun run build:app && electron-builder --win portable",
+    "dist:win:portable": "bun run build:app && electron-builder --win portable --x64",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "check": "tsc --noEmit && eslint .",
     "format": "prettier --write ."
