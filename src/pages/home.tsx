@@ -33,11 +33,49 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { sendChatMessage, useChats } from "@/lib/chats/client";
 import type { ChatMessage } from "@/lib/chats/types";
 import { openDirectory, saveGeneratedFile } from "@/lib/files/client";
 import { useSetting } from "@/lib/settings/client";
+
+type PendingMessageState = {
+  chatId: string;
+  prompt: string;
+  error: string | null;
+};
+
+type RenderedMessage =
+  | {
+      kind: "user";
+      id: string;
+      createdAt: string;
+      message: ChatMessage;
+    }
+  | {
+      kind: "assistant";
+      id: string;
+      createdAt: string;
+      message: ChatMessage;
+    }
+  | {
+      kind: "pending-assistant";
+      id: string;
+      createdAt: string;
+      error: string | null;
+    };
+
+const renderedMessageOrder = {
+  user: 0,
+  assistant: 1,
+  "pending-assistant": 2,
+} as const;
+
+const compareByCreatedAt = (left: RenderedMessage, right: RenderedMessage) =>
+  left.createdAt.localeCompare(right.createdAt) ||
+  renderedMessageOrder[left.kind] - renderedMessageOrder[right.kind] ||
+  left.id.localeCompare(right.id);
 
 const AssistantMessage = ({
   message,
@@ -133,6 +171,27 @@ const UserMessage = ({ message }: { message: ChatMessage }) => (
   </Card>
 );
 
+const PendingAssistantMessage = ({ error }: { error?: string | null }) => (
+  <Card className="border-border/70 bg-card">
+    <CardHeader className="gap-2">
+      <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
+        <RiSparklingLine className="size-4" />
+        Assistant
+      </div>
+      {error ? (
+        <CardDescription className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
+          {error}
+        </CardDescription>
+      ) : (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner className="size-4" />
+          <span>Thinking...</span>
+        </div>
+      )}
+    </CardHeader>
+  </Card>
+);
+
 const HomePage = () => {
   const { activeChat, chats } = useChats();
   const [file, setFile] = useState<SelectedFile | null>(null);
@@ -142,6 +201,8 @@ const HomePage = () => {
   const [saveSuccess, setSaveSuccess] = useState("");
   const [pending, setPending] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pendingMessage, setPendingMessage] =
+    useState<PendingMessageState | null>(null);
   const [fileSaveFolder, setFileSaveFolder] = useSetting("fileSaveFolder");
 
   useEffect(() => {
@@ -151,8 +212,32 @@ const HomePage = () => {
     setSaveSuccess("");
     setPending(false);
     setSaving(false);
+    setPendingMessage(null);
     setFile(activeChat?.file ?? null);
   }, [activeChat?.id, activeChat?.file]);
+
+  useEffect(() => {
+    if (!activeChat || pendingMessage?.chatId !== activeChat.id) {
+      return;
+    }
+
+    const pendingUserIndex = activeChat.messages.findLastIndex(
+      (message) =>
+        message.role === "user" && message.text === pendingMessage.prompt,
+    );
+
+    if (pendingUserIndex < 0) {
+      return;
+    }
+
+    if (
+      activeChat.messages
+        .slice(pendingUserIndex + 1)
+        .some((message) => message.role === "assistant")
+    ) {
+      setPendingMessage(null);
+    }
+  }, [activeChat, pendingMessage]);
 
   const promptValue = prompt.trim();
   const composerFile = activeChat?.fileLocked ? activeChat.file : file;
@@ -165,6 +250,70 @@ const HomePage = () => {
         ),
     [activeChat?.messages],
   );
+  const renderedMessages = useMemo(() => {
+    if (!activeChat) {
+      return [];
+    }
+
+    const nextMessages = activeChat.messages.map(
+      (message): RenderedMessage =>
+        message.role === "user"
+          ? ({
+              kind: "user",
+              id: message.id,
+              createdAt: message.createdAt,
+              message,
+            } as const)
+          : ({
+              kind: "assistant",
+              id: message.id,
+              createdAt: message.createdAt,
+              message,
+            } as const),
+    );
+
+    if (pendingMessage?.chatId !== activeChat.id) {
+      return nextMessages.toSorted(compareByCreatedAt);
+    }
+
+    const pendingUserIndex = activeChat.messages.findLastIndex(
+      (message) =>
+        message.role === "user" && message.text === pendingMessage.prompt,
+    );
+
+    if (
+      pendingUserIndex >= 0 &&
+      activeChat.messages
+        .slice(pendingUserIndex + 1)
+        .some((message) => message.role === "assistant")
+    ) {
+      return nextMessages.toSorted(compareByCreatedAt);
+    }
+
+    const pendingCreatedAt = new Date().toISOString();
+
+    return [
+      ...nextMessages,
+      {
+        kind: "user",
+        id: `pending-user-${activeChat.id}`,
+        createdAt: pendingCreatedAt,
+        message: {
+          id: `pending-user-${activeChat.id}`,
+          chatId: activeChat.id,
+          role: "user",
+          text: pendingMessage.prompt,
+          createdAt: pendingCreatedAt,
+        },
+      } as const,
+      {
+        kind: "pending-assistant",
+        id: `pending-assistant-${activeChat.id}`,
+        createdAt: pendingCreatedAt,
+        error: pendingMessage.error,
+      } as const,
+    ].toSorted(compareByCreatedAt);
+  }, [activeChat, pendingMessage]);
   const canSubmit = !!activeChat && !!composerFile && !!promptValue && !pending;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -185,23 +334,38 @@ const HomePage = () => {
       return;
     }
 
+    const submittedPrompt = promptValue;
+
     setPending(true);
     setError("");
     setSaveError("");
     setSaveSuccess("");
+    setPrompt("");
+    setPendingMessage({
+      chatId: activeChat.id,
+      prompt: submittedPrompt,
+      error: null,
+    });
 
     try {
       await sendChatMessage({
         chatId: activeChat.id,
-        prompt: promptValue,
+        prompt: submittedPrompt,
         file: activeChat.fileLocked ? undefined : composerFile,
       });
-      setPrompt("");
     } catch (submissionError) {
-      setError(
+      const nextError =
         submissionError instanceof Error
           ? submissionError.message
-          : "Unable to get a response from Gemini.",
+          : "Unable to get a response from Gemini.";
+
+      setPendingMessage((currentPendingMessage) =>
+        currentPendingMessage?.chatId === activeChat.id
+          ? {
+              ...currentPendingMessage,
+              error: nextError,
+            }
+          : currentPendingMessage,
       );
     } finally {
       setPending(false);
@@ -385,7 +549,7 @@ const HomePage = () => {
       </Card>
 
       <div className="flex flex-col gap-4">
-        {activeChat.messages.length === 0 ? (
+        {renderedMessages.length === 0 ? (
           <Card className="border-dashed">
             <CardHeader>
               <CardTitle>No messages yet</CardTitle>
@@ -396,21 +560,29 @@ const HomePage = () => {
             </CardHeader>
           </Card>
         ) : (
-          activeChat.messages.map((message) =>
-            message.role === "user" ? (
-              <UserMessage key={message.id} message={message} />
-            ) : (
-              <AssistantMessage
-                key={message.id}
-                canSave={message.id === latestSavableMessage?.id}
-                fileName={activeChat.file?.name ?? null}
-                fileSaveFolder={fileSaveFolder}
-                message={message}
-                onSave={handleSave}
-                saving={saving}
-              />
-            ),
-          )
+          renderedMessages.map((message) => {
+            if (message.kind === "user") {
+              return <UserMessage key={message.id} message={message.message} />;
+            }
+
+            if (message.kind === "assistant") {
+              return (
+                <AssistantMessage
+                  key={message.id}
+                  canSave={message.message.id === latestSavableMessage?.id}
+                  fileName={activeChat.file?.name ?? null}
+                  fileSaveFolder={fileSaveFolder}
+                  message={message.message}
+                  onSave={handleSave}
+                  saving={saving}
+                />
+              );
+            }
+
+            return (
+              <PendingAssistantMessage key={message.id} error={message.error} />
+            );
+          })
         )}
       </div>
     </div>

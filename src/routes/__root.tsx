@@ -105,10 +105,10 @@ const RootLayout = () => {
         <Sidebar className="fixed inset-y-0 left-0 h-svh" collapsible="none">
           <SidebarHeader className="border-b border-sidebar-border p-4">
             <Link
-              className="block rounded-none px-1 py-2 text-lg font-semibold tracking-[0.18em] uppercase transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
+              className="block rounded-none px-1 py-2 text-lg font-semibold tracking-[0.18em] transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
               to="/"
             >
-              AIngineer
+              LMU AIngineer
             </Link>
             <Button
               className="w-full justify-start"

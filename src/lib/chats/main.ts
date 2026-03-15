@@ -466,8 +466,44 @@ export const sendChatMessage = async (request: unknown) => {
   const baseFileContents = await getWorkingFileContents(chat, selectedFile);
   const userMessageId = randomUUID();
   const assistantMessageId = randomUUID();
-  const createdAt = timestamp();
+  const userCreatedAt = timestamp();
   const apiKey = readGeminiApiKey();
+  const db = getDatabase();
+
+  db.transaction(() => {
+    insertMessage(db, {
+      id: userMessageId,
+      chatId,
+      role: "user",
+      text: prompt,
+      createdAt: userCreatedAt,
+    });
+
+    db.prepare(
+      `
+        UPDATE chats
+        SET
+          title = ?,
+          file_path = ?,
+          file_name = ?,
+          file_extension = ?,
+          file_directory = ?,
+          file_locked = 1,
+          updated_at = ?
+        WHERE id = ?
+      `,
+    ).run(
+      chat.fileLocked ? chat.title : selectedFile.name,
+      selectedFile.path,
+      selectedFile.name,
+      selectedFile.extension,
+      selectedFile.directory,
+      userCreatedAt,
+      chatId,
+    );
+
+    writeActiveChatId(chatId);
+  })();
 
   let assistantMessage: {
     text: string;
@@ -514,15 +550,8 @@ export const sendChatMessage = async (request: unknown) => {
     };
   }
 
-  const db = getDatabase();
+  const assistantCreatedAt = timestamp();
   const tx = db.transaction(() => {
-    insertMessage(db, {
-      id: userMessageId,
-      chatId,
-      role: "user",
-      text: prompt,
-      createdAt,
-    });
     insertMessage(db, {
       id: assistantMessageId,
       chatId,
@@ -533,7 +562,7 @@ export const sendChatMessage = async (request: unknown) => {
       baseFileContents,
       parseError: assistantMessage.parseError,
       error: assistantMessage.error,
-      createdAt,
+      createdAt: assistantCreatedAt,
     });
 
     db.prepare(
@@ -555,7 +584,7 @@ export const sendChatMessage = async (request: unknown) => {
       selectedFile.name,
       selectedFile.extension,
       selectedFile.directory,
-      createdAt,
+      assistantCreatedAt,
       chatId,
     );
 
