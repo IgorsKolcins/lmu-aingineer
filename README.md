@@ -1,6 +1,6 @@
 # LMU AIngineer (alpha)
 
-This is app allows you to select existing LMU car setup file (.svm) and ask AI to make changes to it.
+This app allows you to select an existing LMU car setup file (.svm) and ask the AI to make changes to it.
 
 App uses Google Gemini 2.5 Flash in a free plan.
 
@@ -9,7 +9,7 @@ App uses Google Gemini 2.5 Flash in a free plan.
 
 ### Install Windows .exe
 
-1. Donwload the .exe file from
+1. Download the latest release from: [Releases](https://github.com/IgorsKolcins/lmu-aingineer/releases)
 2. Create a new API key in [Google AI Studio](https://aistudio.google.com/api-keys)
 3. Open .exe file
 4. Go to the settings and enter your API key
