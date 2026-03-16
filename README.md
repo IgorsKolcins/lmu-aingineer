@@ -1,4 +1,4 @@
-# LMU AIngineer (alpha)
+# LeMans Ultimate AIngineer (alpha)
 
 This app allows you to select an existing LMU car setup file (.svm) and ask the AI to make changes to it.
 
