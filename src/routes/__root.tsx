@@ -180,9 +180,7 @@ const RootLayout = () => {
           </SidebarFooter>
         </Sidebar>
         <SidebarInset className="min-h-screen rounded-none ml-[var(--sidebar-width)]">
-          <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 p-6">
-            <Outlet />
-          </div>
+          <Outlet />
         </SidebarInset>
       </SidebarProvider>
     </main>

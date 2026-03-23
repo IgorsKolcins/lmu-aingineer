@@ -1,10 +1,14 @@
 import {
+  inspectSaveTargetRequestSchema,
+  inspectSaveTargetResponseSchema,
   openDirectoryOptionsSchema,
   openFileOptionsSchema,
   saveGeneratedFileRequestSchema,
   saveGeneratedFileResponseSchema,
   selectedDirectorySchema,
   selectedFileSchema,
+  type InspectSaveTargetRequest,
+  type InspectSaveTargetResponse,
   type OpenDirectoryOptions,
   type OpenFileOptions,
   type SaveGeneratedFileRequest,
@@ -18,6 +22,9 @@ type FilesBridge = {
   openDirectory: (
     options?: OpenDirectoryOptions,
   ) => Promise<SelectedDirectory | null>;
+  inspectSaveTarget: (
+    request: InspectSaveTargetRequest,
+  ) => Promise<InspectSaveTargetResponse>;
   saveGeneratedFile: (
     request: SaveGeneratedFileRequest,
   ) => Promise<SaveGeneratedFileResponse>;
@@ -49,6 +56,13 @@ export const openDirectory = async (options: OpenDirectoryOptions = {}) => {
     .catch(() => null);
 
   return selection ? selectedDirectorySchema.parse(selection) : null;
+};
+
+export const inspectSaveTarget = async (request: InspectSaveTargetRequest) => {
+  const parsedRequest = inspectSaveTargetRequestSchema.parse(request);
+  const response = await readBridge()?.inspectSaveTarget(parsedRequest);
+
+  return inspectSaveTargetResponseSchema.parse(response);
 };
 
 export const saveGeneratedFile = async (request: SaveGeneratedFileRequest) => {

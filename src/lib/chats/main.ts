@@ -22,7 +22,9 @@ import {
   getChatRequestSchema,
   sendChatMessageRequestSchema,
   setActiveChatRequestSchema,
+  updateChatOutputRequestSchema,
 } from "./types.ts";
+import { getSettings } from "../settings/main.ts";
 
 type ChatRow = {
   id: string;
@@ -32,6 +34,8 @@ type ChatRow = {
   file_extension: string | null;
   file_directory: string | null;
   file_locked: number;
+  output_directory: string | null;
+  output_file_name: string | null;
   created_at: string;
   updated_at: string;
   message_count: number;
@@ -59,6 +63,22 @@ let database: Database.Database | null = null;
 
 const timestamp = () => new Date().toISOString();
 
+const ensureChatColumn = (
+  db: Database.Database,
+  name: string,
+  definition: string,
+) => {
+  const existingColumns = db
+    .prepare(`PRAGMA table_info(chats)`)
+    .all() as Array<{ name: string }>;
+
+  if (existingColumns.some((column) => column.name === name)) {
+    return;
+  }
+
+  db.exec(`ALTER TABLE chats ADD COLUMN ${name} ${definition}`);
+};
+
 const getDatabase = () => {
   if (database) {
     return database;
@@ -79,6 +99,8 @@ const getDatabase = () => {
       file_extension TEXT,
       file_directory TEXT,
       file_locked INTEGER NOT NULL DEFAULT 0,
+      output_directory TEXT,
+      output_file_name TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -104,6 +126,9 @@ const getDatabase = () => {
       value TEXT
     );
   `);
+
+  ensureChatColumn(nextDatabase, "output_directory", "TEXT");
+  ensureChatColumn(nextDatabase, "output_file_name", "TEXT");
 
   database = nextDatabase;
 
@@ -134,6 +159,8 @@ const mapChatSummary = (row: ChatRow) =>
     title: row.title,
     file: toSelectedFile(row),
     fileLocked: Boolean(row.file_locked),
+    outputDirectory: row.output_directory ?? null,
+    outputFileName: row.output_file_name ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     messageCount: row.message_count,
@@ -168,6 +195,8 @@ const selectChatSummaries = () => {
           chats.file_extension,
           chats.file_directory,
           chats.file_locked,
+          chats.output_directory,
+          chats.output_file_name,
           chats.created_at,
           chats.updated_at,
           COUNT(messages.id) AS message_count,
@@ -202,6 +231,8 @@ const selectChatRow = (chatId: string) => {
             chats.file_extension,
             chats.file_directory,
             chats.file_locked,
+            chats.output_directory,
+            chats.output_file_name,
             chats.created_at,
             chats.updated_at,
             COUNT(messages.id) AS message_count,
@@ -397,6 +428,7 @@ export const createChat = async (request: unknown) => {
   const db = getDatabase();
   const id = randomUUID();
   const createdAt = timestamp();
+  const { fileSaveFolder } = getSettings();
 
   db.prepare(
     `
@@ -408,12 +440,14 @@ export const createChat = async (request: unknown) => {
         file_extension,
         file_directory,
         file_locked,
+        output_directory,
+        output_file_name,
         created_at,
         updated_at
       )
-      VALUES (?, ?, NULL, NULL, NULL, NULL, 0, ?, ?)
+      VALUES (?, ?, NULL, NULL, NULL, NULL, 0, ?, NULL, ?, ?)
     `,
-  ).run(id, newChatTitle, createdAt, createdAt);
+  ).run(id, newChatTitle, fileSaveFolder, createdAt, createdAt);
 
   writeActiveChatId(id);
 
@@ -433,6 +467,31 @@ export const getChat = async (request: unknown) => {
 export const setActiveChat = async (request: unknown) => {
   const { chatId } = setActiveChatRequestSchema.parse(request);
   requireChatDetail(chatId);
+  writeActiveChatId(chatId);
+
+  return buildSnapshot(chatId);
+};
+
+export const updateChatOutput = async (request: unknown) => {
+  const { chatId, outputDirectory, outputFileName } =
+    updateChatOutputRequestSchema.parse(request);
+  const chat = requireChatDetail(chatId);
+  const db = getDatabase();
+
+  db.prepare(
+    `
+      UPDATE chats
+      SET
+        output_directory = ?,
+        output_file_name = ?
+      WHERE id = ?
+    `,
+  ).run(
+    outputDirectory === undefined ? chat.outputDirectory : outputDirectory,
+    outputFileName === undefined ? chat.outputFileName : outputFileName,
+    chatId,
+  );
+
   writeActiveChatId(chatId);
 
   return buildSnapshot(chatId);

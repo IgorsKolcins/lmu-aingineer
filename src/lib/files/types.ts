@@ -29,9 +29,20 @@ export const selectedDirectorySchema = z.object({
   name: z.string().min(1),
 });
 
+export const inspectSaveTargetRequestSchema = z.object({
+  directory: z.string().min(1),
+  fileName: z.string().trim().min(1),
+});
+
+export const inspectSaveTargetResponseSchema = z.object({
+  path: z.string().min(1),
+  fileName: z.string().min(1),
+  exists: z.boolean(),
+});
+
 export const saveGeneratedFileRequestSchema = z.object({
   directory: z.string().min(1),
-  sourceName: z.string().min(1),
+  fileName: z.string().trim().min(1),
   contents: z.string(),
 });
 
@@ -46,6 +57,12 @@ export type OpenFileOptions = z.infer<typeof openFileOptionsSchema>;
 export type OpenDirectoryOptions = z.infer<typeof openDirectoryOptionsSchema>;
 export type SelectedFile = z.infer<typeof selectedFileSchema>;
 export type SelectedDirectory = z.infer<typeof selectedDirectorySchema>;
+export type InspectSaveTargetRequest = z.infer<
+  typeof inspectSaveTargetRequestSchema
+>;
+export type InspectSaveTargetResponse = z.infer<
+  typeof inspectSaveTargetResponseSchema
+>;
 export type SaveGeneratedFileRequest = z.infer<
   typeof saveGeneratedFileRequestSchema
 >;

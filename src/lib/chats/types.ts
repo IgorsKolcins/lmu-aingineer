@@ -8,6 +8,18 @@ export const chatSummarySchema = z.object({
   title: z.string().min(1),
   file: selectedFileSchema.nullable(),
   fileLocked: z.boolean(),
+  outputDirectory: z
+    .string()
+    .min(1)
+    .nullable()
+    .optional()
+    .transform((value) => value ?? null),
+  outputFileName: z
+    .string()
+    .min(1)
+    .nullable()
+    .optional()
+    .transform((value) => value ?? null),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   messageCount: z.number().int().nonnegative(),
@@ -51,6 +63,12 @@ export const setActiveChatRequestSchema = z.object({
   chatId: z.string().min(1),
 });
 
+export const updateChatOutputRequestSchema = z.object({
+  chatId: z.string().min(1),
+  outputDirectory: z.string().min(1).nullable().optional(),
+  outputFileName: z.string().trim().min(1).nullable().optional(),
+});
+
 export const sendChatMessageRequestSchema = z.object({
   chatId: z.string().min(1),
   prompt: z.string().trim().min(1),
@@ -67,6 +85,9 @@ export type CreateChatRequest = z.infer<typeof createChatRequestSchema>;
 export type DeleteChatRequest = z.infer<typeof deleteChatRequestSchema>;
 export type GetChatRequest = z.infer<typeof getChatRequestSchema>;
 export type SetActiveChatRequest = z.infer<typeof setActiveChatRequestSchema>;
+export type UpdateChatOutputRequest = z.infer<
+  typeof updateChatOutputRequestSchema
+>;
 export type SendChatMessageRequest = z.infer<
   typeof sendChatMessageRequestSchema
 >;

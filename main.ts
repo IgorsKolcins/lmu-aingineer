@@ -8,9 +8,11 @@ import {
   listChats,
   sendChatMessage,
   setActiveChat,
+  updateChatOutput,
 } from "./src/lib/chats/main.ts";
 import { devServerUrl } from "./env.ts";
 import {
+  inspectSaveTarget,
   openDirectory,
   openFile,
   saveGeneratedFile,
@@ -37,6 +39,9 @@ ipcMain.handle("files:open", (event, options: unknown) =>
 ipcMain.handle("files:open-directory", (event, options: unknown) =>
   openDirectory(BrowserWindow.fromWebContents(event.sender), options),
 );
+ipcMain.handle("files:inspect-save-target", (_event, request: unknown) =>
+  inspectSaveTarget(request),
+);
 ipcMain.handle("files:save-generated", (_event, request: unknown) =>
   saveGeneratedFile(request),
 );
@@ -47,6 +52,9 @@ ipcMain.handle("chats:create", (_event, request: unknown) =>
 );
 ipcMain.handle("chats:set-active", (_event, request: unknown) =>
   setActiveChat(request),
+);
+ipcMain.handle("chats:update-output", (_event, request: unknown) =>
+  updateChatOutput(request),
 );
 ipcMain.handle("chats:delete", (_event, request: unknown) =>
   deleteChat(request),

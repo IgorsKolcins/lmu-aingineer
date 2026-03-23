@@ -1,7 +1,9 @@
-import { writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join, parse } from "node:path";
+import { access, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, join } from "node:path";
 import { dialog, type BrowserWindow, type OpenDialogOptions } from "electron";
 import {
+  inspectSaveTargetRequestSchema,
+  inspectSaveTargetResponseSchema,
   openDirectoryOptionsSchema,
   openFileOptionsSchema,
   saveGeneratedFileRequestSchema,
@@ -30,18 +32,12 @@ const toSelectedDirectory = (path: string): SelectedDirectory =>
     name: basename(path),
   });
 
-const toTimestamp = (date: Date) => {
-  const pad = (value: number) => String(value).padStart(2, "0");
+const normalizeSaveFileName = (value: string) => {
+  const trimmedValue = value.trim();
 
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    "-",
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds()),
-  ].join("");
+  return extname(trimmedValue).toLowerCase() === ".svm"
+    ? trimmedValue
+    : `${trimmedValue}.svm`;
 };
 
 export const openFile = async (
@@ -85,12 +81,26 @@ export const openDirectory = async (
   return path ? toSelectedDirectory(path) : null;
 };
 
+export const inspectSaveTarget = async (request: unknown) => {
+  const { directory, fileName } = inspectSaveTargetRequestSchema.parse(request);
+  const normalizedFileName = normalizeSaveFileName(fileName);
+  const path = join(directory, normalizedFileName);
+  const exists = await access(path)
+    .then(() => true)
+    .catch(() => false);
+
+  return inspectSaveTargetResponseSchema.parse({
+    path,
+    fileName: normalizedFileName,
+    exists,
+  });
+};
+
 export const saveGeneratedFile = async (request: unknown) => {
-  const { directory, sourceName, contents } =
+  const { directory, fileName, contents } =
     saveGeneratedFileRequestSchema.parse(request);
-  const { name } = parse(sourceName);
-  const nextName = `${name}-${toTimestamp(new Date())}.svm`;
-  const path = join(directory, nextName);
+  const normalizedFileName = normalizeSaveFileName(fileName);
+  const path = join(directory, normalizedFileName);
 
   await writeFile(path, contents, "utf-8").catch(() => {
     throw new Error("Unable to save the generated setup file.");
@@ -98,7 +108,7 @@ export const saveGeneratedFile = async (request: unknown) => {
 
   return saveGeneratedFileResponseSchema.parse({
     path,
-    name: nextName,
+    name: normalizedFileName,
     directory,
   });
 };

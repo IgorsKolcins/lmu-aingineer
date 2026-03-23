@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   RiArrowDownSLine,
-  RiArrowRightSLine,
+  RiArrowRightLine,
   RiChat3Line,
+  RiFileTextLine,
+  RiFolderOpenLine,
   RiSparklingLine,
 } from "@remixicon/react";
 import { SetupDiffEditor } from "@/components/SetupDiffEditor";
@@ -15,7 +17,6 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -25,23 +26,32 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "@/components/ui/field";
+import { FieldDescription, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { sendChatMessage, useChats } from "@/lib/chats/client";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  sendChatMessage,
+  updateChatOutput,
+  useChats,
+} from "@/lib/chats/client";
 import type { ChatMessage } from "@/lib/chats/types";
-import { openDirectory, saveGeneratedFile } from "@/lib/files/client";
-import { useSetting } from "@/lib/settings/client";
+import {
+  inspectSaveTarget,
+  openDirectory,
+  saveGeneratedFile,
+} from "@/lib/files/client";
+import { cn } from "@/lib/utils";
 
 type PendingMessageState = {
   chatId: string;
+  createdAt: string;
   prompt: string;
   error: string | null;
 };
@@ -77,21 +87,43 @@ const compareByCreatedAt = (left: RenderedMessage, right: RenderedMessage) =>
   renderedMessageOrder[left.kind] - renderedMessageOrder[right.kind] ||
   left.id.localeCompare(right.id);
 
-const AssistantMessage = ({
-  message,
-  canSave,
-  fileName,
-  fileSaveFolder,
-  onSave,
-  saving,
+const folderNameFromPath = (value: string | null) =>
+  value?.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
+
+const defaultOutputNameBase = () => {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+
+  return `aingineer-setup-${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()}`;
+};
+
+const sourceFileFilters = [
+  {
+    name: "Le Mans Ultimate setup",
+    extensions: ["svm"],
+  },
+];
+
+const PathTooltip = ({
+  children,
+  path,
 }: {
-  message: ChatMessage;
-  canSave: boolean;
-  fileName: string | null;
-  fileSaveFolder: string | null;
-  onSave: () => Promise<void>;
-  saving: boolean;
+  children: React.ReactNode;
+  path: string | null;
 }) => {
+  if (!path) {
+    return children;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>{path}</TooltipContent>
+    </Tooltip>
+  );
+};
+
+const AssistantMessage = ({ message }: { message: ChatMessage }) => {
   const body = message.description ?? message.text ?? "No response text.";
 
   return (
@@ -104,14 +136,14 @@ const AssistantMessage = ({
         <CardDescription className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
           {body}
         </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
         {message.error ? <FieldError>{message.error}</FieldError> : null}
         {message.parseError ? (
           <FieldError>{message.parseError}</FieldError>
         ) : null}
+      </CardHeader>
 
-        {message.baseFileContents && message.fileContents ? (
+      {message.baseFileContents && message.fileContents ? (
+        <div className="px-6 pb-6">
           <Collapsible className="border border-border/70">
             <CollapsibleTrigger asChild>
               <Button
@@ -121,7 +153,7 @@ const AssistantMessage = ({
               >
                 <span>View setup diff</span>
                 <span className="flex items-center gap-1 text-muted-foreground">
-                  <RiArrowRightSLine className="size-4 group-data-[state=open]:hidden" />
+                  <RiArrowRightLine className="size-4 group-data-[state=open]:hidden" />
                   <RiArrowDownSLine className="hidden size-4 group-data-[state=open]:block" />
                   Monaco
                 </span>
@@ -134,36 +166,33 @@ const AssistantMessage = ({
               />
             </CollapsibleContent>
           </Collapsible>
-        ) : null}
-
-        {canSave && fileName && message.fileContents ? (
-          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            <Button
-              disabled={saving}
-              onClick={() => void onSave()}
-              type="button"
-            >
-              {saving ? "Saving..." : "Save Generated Setup"}
-            </Button>
-            <span>
-              {fileSaveFolder
-                ? `Save folder: ${fileSaveFolder}`
-                : "No save folder set. You will be prompted when saving."}
-            </span>
-          </div>
-        ) : null}
-      </CardContent>
+        </div>
+      ) : null}
     </Card>
   );
 };
 
-const UserMessage = ({ message }: { message: ChatMessage }) => (
+const UserMessage = ({
+  message,
+  sourceFile,
+}: {
+  message: ChatMessage;
+  sourceFile: SelectedFile | null;
+}) => (
   <Card className="border-border/70 bg-muted/30">
-    <CardHeader className="gap-2">
+    <CardHeader className="gap-3">
       <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
         <RiChat3Line className="size-4" />
         You
       </div>
+      {sourceFile ? (
+        <PathTooltip path={sourceFile.path}>
+          <div className="inline-flex max-w-full items-center gap-2 text-xs text-muted-foreground">
+            <RiFileTextLine className="size-4 shrink-0" />
+            <span className="truncate">{sourceFile.name}</span>
+          </div>
+        </PathTooltip>
+      ) : null}
       <CardDescription className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
         {message.text}
       </CardDescription>
@@ -193,7 +222,7 @@ const PendingAssistantMessage = ({ error }: { error?: string | null }) => (
 );
 
 const HomePage = () => {
-  const { activeChat, chats } = useChats();
+  const { activeChat } = useChats();
   const [file, setFile] = useState<SelectedFile | null>(null);
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
@@ -203,7 +232,13 @@ const HomePage = () => {
   const [saving, setSaving] = useState(false);
   const [pendingMessage, setPendingMessage] =
     useState<PendingMessageState | null>(null);
-  const [fileSaveFolder, setFileSaveFolder] = useSetting("fileSaveFolder");
+  const [pendingOutputDirectory, setPendingOutputDirectory] = useState<
+    string | null
+  >(null);
+  const [outputFileName, setOutputFileName] = useState("");
+  const [saveTarget, setSaveTarget] = useState<Awaited<
+    ReturnType<typeof inspectSaveTarget>
+  > | null>(null);
 
   useEffect(() => {
     setPrompt("");
@@ -213,8 +248,20 @@ const HomePage = () => {
     setPending(false);
     setSaving(false);
     setPendingMessage(null);
+    setPendingOutputDirectory(null);
     setFile(activeChat?.file ?? null);
-  }, [activeChat?.id, activeChat?.file]);
+    setOutputFileName(activeChat?.outputFileName ?? "");
+  }, [activeChat?.file, activeChat?.id, activeChat?.outputFileName]);
+
+  useEffect(() => {
+    if (!pendingOutputDirectory) {
+      return;
+    }
+
+    if (activeChat?.outputDirectory === pendingOutputDirectory) {
+      setPendingOutputDirectory(null);
+    }
+  }, [activeChat?.outputDirectory, pendingOutputDirectory]);
 
   useEffect(() => {
     if (!activeChat || pendingMessage?.chatId !== activeChat.id) {
@@ -239,8 +286,110 @@ const HomePage = () => {
     }
   }, [activeChat, pendingMessage]);
 
+  useEffect(() => {
+    if (!activeChat) {
+      return;
+    }
+
+    const trimmedFileName = outputFileName.trim();
+    const persistedFileName = activeChat.outputFileName ?? "";
+
+    if (trimmedFileName === persistedFileName) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void updateChatOutput({
+        chatId: activeChat.id,
+        outputFileName: trimmedFileName || null,
+      }).catch(() => undefined);
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeChat, outputFileName]);
+
+  useEffect(() => {
+    const sourceFile = activeChat?.file ?? file;
+    const outputDirectory = activeChat?.outputDirectory;
+
+    if (
+      !activeChat ||
+      !sourceFile ||
+      !outputDirectory ||
+      activeChat.outputFileName
+    ) {
+      return;
+    }
+
+    const baseName = defaultOutputNameBase();
+
+    setOutputFileName((currentValue) => currentValue || baseName);
+
+    let cancelled = false;
+
+    const assignDefaultOutputFileName = async () => {
+      let attempt = 1;
+
+      while (!cancelled) {
+        const candidate = attempt === 1 ? baseName : `${baseName}-${attempt}`;
+        const target = await inspectSaveTarget({
+          directory: outputDirectory,
+          fileName: candidate,
+        });
+
+        if (!target.exists) {
+          await updateChatOutput({
+            chatId: activeChat.id,
+            outputFileName: target.fileName,
+          });
+          return;
+        }
+
+        attempt += 1;
+      }
+    };
+
+    void assignDefaultOutputFileName().catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChat, file]);
+
+  useEffect(() => {
+    const outputDirectory = activeChat?.outputDirectory;
+    const trimmedFileName = outputFileName.trim();
+
+    if (!outputDirectory || !trimmedFileName) {
+      setSaveTarget(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void inspectSaveTarget({
+      directory: outputDirectory,
+      fileName: trimmedFileName,
+    })
+      .then((target) => {
+        if (!cancelled) {
+          setSaveTarget(target);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSaveTarget(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChat?.outputDirectory, outputFileName]);
+
   const promptValue = prompt.trim();
   const composerFile = activeChat?.fileLocked ? activeChat.file : file;
+  const outputDirectory = pendingOutputDirectory ?? activeChat?.outputDirectory;
   const latestSavableMessage = useMemo(
     () =>
       [...(activeChat?.messages ?? [])]
@@ -290,32 +439,42 @@ const HomePage = () => {
       return nextMessages.toSorted(compareByCreatedAt);
     }
 
-    const pendingCreatedAt = new Date().toISOString();
-
     return [
       ...nextMessages,
       {
         kind: "user",
         id: `pending-user-${activeChat.id}`,
-        createdAt: pendingCreatedAt,
+        createdAt: pendingMessage.createdAt,
         message: {
           id: `pending-user-${activeChat.id}`,
           chatId: activeChat.id,
           role: "user",
           text: pendingMessage.prompt,
-          createdAt: pendingCreatedAt,
+          createdAt: pendingMessage.createdAt,
         },
       } as const,
       {
         kind: "pending-assistant",
         id: `pending-assistant-${activeChat.id}`,
-        createdAt: pendingCreatedAt,
+        createdAt: pendingMessage.createdAt,
         error: pendingMessage.error,
       } as const,
     ].toSorted(compareByCreatedAt);
   }, [activeChat, pendingMessage]);
+  const firstUserMessageId = useMemo(
+    () =>
+      renderedMessages.find((message) => message.kind === "user")?.id ?? null,
+    [renderedMessages],
+  );
+  const isEmptyChat =
+    renderedMessages.length === 0 && pendingMessage?.chatId !== activeChat?.id;
+  const saveButtonLabel = saveTarget?.exists ? "Override" : "Save";
   const canSubmit = !!activeChat && !!composerFile && !!promptValue && !pending;
-  const isNewChat = activeChat?.messageCount === 0;
+  const canSave =
+    !!outputDirectory &&
+    !!outputFileName.trim() &&
+    !!latestSavableMessage?.fileContents &&
+    !saving;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -344,6 +503,7 @@ const HomePage = () => {
     setPrompt("");
     setPendingMessage({
       chatId: activeChat.id,
+      createdAt: new Date().toISOString(),
       prompt: submittedPrompt,
       error: null,
     });
@@ -373,8 +533,36 @@ const HomePage = () => {
     }
   };
 
+  const handleChooseOutputFolder = async () => {
+    if (!activeChat) {
+      return;
+    }
+
+    const selectedDirectory = await openDirectory({
+      title: "Choose a folder for generated setups",
+      buttonLabel: "Use folder",
+    });
+
+    if (!selectedDirectory) {
+      return;
+    }
+
+    setPendingOutputDirectory(selectedDirectory.path);
+    setSaveError("");
+    setSaveSuccess("");
+
+    await updateChatOutput({
+      chatId: activeChat.id,
+      outputDirectory: selectedDirectory.path,
+    });
+  };
+
   const handleSave = async () => {
-    if (!activeChat?.file || !latestSavableMessage?.fileContents) {
+    if (
+      !activeChat?.outputDirectory ||
+      !latestSavableMessage?.fileContents ||
+      !outputFileName.trim()
+    ) {
       return;
     }
 
@@ -383,33 +571,18 @@ const HomePage = () => {
     setSaveSuccess("");
 
     try {
-      let targetDirectory = fileSaveFolder;
-
-      if (!targetDirectory) {
-        const selectedDirectory = await openDirectory({
-          title: "Choose a folder for generated setups",
-          buttonLabel: "Use folder",
-        });
-
-        if (!selectedDirectory) {
-          throw new Error(
-            "Choose a save folder before saving the generated setup.",
-          );
-        }
-
-        targetDirectory = await setFileSaveFolder(selectedDirectory.path);
-      }
-
-      if (!targetDirectory) {
-        throw new Error("Unable to persist the save folder.");
-      }
-
       const savedFile = await saveGeneratedFile({
         contents: latestSavableMessage.fileContents,
-        directory: targetDirectory,
-        sourceName: activeChat.file.name,
+        directory: activeChat.outputDirectory,
+        fileName: outputFileName,
       });
 
+      setOutputFileName(savedFile.name);
+      await updateChatOutput({
+        chatId: activeChat.id,
+        outputDirectory: savedFile.directory,
+        outputFileName: savedFile.name,
+      });
       setSaveSuccess(`Saved setup to ${savedFile.path}`);
     } catch (saveActionError) {
       setSaveError(
@@ -436,158 +609,213 @@ const HomePage = () => {
     );
   }
 
-  if (isNewChat) {
-    return (
-      <div className="flex min-h-[calc(100vh-3rem)] items-center justify-center">
-        <Card className="w-full max-w-3xl border-border/70 bg-card/95 shadow-sm">
-          <CardHeader className="items-center gap-3 text-center">
-            <CardTitle className="text-3xl font-semibold tracking-tight">
-              This is your personal AI(e)ngineer.
-            </CardTitle>
-            <CardDescription className="max-w-2xl text-base leading-relaxed text-muted-foreground">
-              Select an initial car setup file, then ask your engineer for
-              suggestions, explanations, or setup changes.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="flex flex-col gap-6" onSubmit={handleSubmit}>
-              <Field>
-                <FieldLabel>Initial setup file</FieldLabel>
-                <FieldContent>
-                  <FileSelectRoot
-                    buttonLabel="Select `.svm` file"
-                    clearable
-                    filters={[
-                      {
-                        name: "Le Mans Ultimate setup",
-                        extensions: ["svm"],
-                      },
-                    ]}
-                    onValueChange={(nextFile) => {
-                      setFile(nextFile);
-                      setError("");
-                    }}
-                    title="Choose a Le Mans Ultimate setup file"
-                    value={file}
-                  >
-                    <div className="flex gap-2">
-                      <Input
-                        type="text"
-                        value={file?.path ?? ""}
-                        disabled
-                        placeholder="No `.svm` file selected"
-                      />
-                      <FileSelectClear />
-                      <FileSelectTrigger />
-                    </div>
-                  </FileSelectRoot>
-                </FieldContent>
-              </Field>
-
-              <Field>
-                <FieldLabel htmlFor="chat-prompt">Prompt</FieldLabel>
-                <FieldContent>
-                  <Textarea
-                    id="chat-prompt"
-                    name="prompt"
-                    onChange={(event) => {
-                      setPrompt(event.target.value);
-                      setError("");
-                    }}
-                    placeholder="Example: Reduce rear instability on corner exit and soften the front response over curbs."
-                    rows={6}
-                    value={prompt}
+  return (
+    <TooltipProvider>
+      <div className="flex h-screen flex-col overflow-hidden border border-border/70 bg-background">
+        {!isEmptyChat ? (
+          <div className="shrink-0 border-b border-border/70 bg-card/95 px-4 py-3 backdrop-blur">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="flex flex-1 items-center gap-2">
+                <Button
+                  onClick={() => void handleChooseOutputFolder()}
+                  size="icon-sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  <RiFolderOpenLine className="size-4" />
+                </Button>
+                <PathTooltip path={activeChat.outputDirectory}>
+                  <Input
+                    className="min-w-0 shrink-0 w-[120px]"
+                    disabled
+                    placeholder="No output folder selected"
+                    type="text"
+                    value={folderNameFromPath(outputDirectory ?? null)}
                   />
-                </FieldContent>
-              </Field>
-
-              <div className="flex justify-center">
-                <Button type="submit" disabled={!canSubmit} size="lg">
-                  {pending ? "Sending..." : "Send"}
+                </PathTooltip>
+                <RiArrowRightLine className="size-4 shrink-0 text-muted-foreground" />
+                <Input
+                  onChange={(event) => {
+                    setOutputFileName(event.target.value);
+                    setSaveError("");
+                    setSaveSuccess("");
+                  }}
+                  type="text"
+                  value={outputFileName}
+                />
+                <Button
+                  disabled={!canSave}
+                  onClick={() => void handleSave()}
+                  type="button"
+                >
+                  {saving ? "Saving..." : saveButtonLabel}
                 </Button>
               </div>
+            </div>
+            {saveError ? <FieldError>{saveError}</FieldError> : null}
+            {saveSuccess ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {saveSuccess}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
-              <FieldError>{error}</FieldError>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div className="mx-auto flex max-w-4xl flex-col gap-4">
+            {isEmptyChat ? (
+              <div className="flex min-h-full items-center justify-center py-8">
+                <Card className="w-full max-w-3xl border-border/70 bg-card/95 shadow-sm">
+                  <CardHeader className="items-center gap-3 text-center">
+                    <CardTitle className="text-3xl font-semibold tracking-tight">
+                      This is your personal AI(e)ngineer.
+                    </CardTitle>
+                    <CardDescription className="max-w-2xl text-base leading-relaxed text-muted-foreground">
+                      Select an initial car setup file, then ask your engineer
+                      for suggestions, explanations, or setup changes.
+                    </CardDescription>
+                  </CardHeader>
+                  <div className="px-6 pb-6">
+                    <form
+                      className="flex flex-col gap-6"
+                      onSubmit={handleSubmit}
+                    >
+                      <FileSelectRoot
+                        buttonLabel="Choose `.svm` file"
+                        clearable
+                        filters={sourceFileFilters}
+                        onValueChange={(nextFile) => {
+                          setFile(nextFile);
+                          setError("");
+                        }}
+                        title="Choose a Le Mans Ultimate setup file"
+                        value={file}
+                      >
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <PathTooltip path={file?.path ?? null}>
+                              <div className="flex-1">
+                                <Input
+                                  disabled
+                                  placeholder="Select the initial `.svm` file"
+                                  type="text"
+                                  value={file?.path ?? ""}
+                                />
+                              </div>
+                            </PathTooltip>
+                            <FileSelectClear />
+                            <FileSelectTrigger />
+                          </div>
+                          <FieldDescription>
+                            The first message locks this chat to the selected
+                            setup file.
+                          </FieldDescription>
+                        </div>
+                      </FileSelectRoot>
 
-  return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Setup chat</CardTitle>
-          <CardDescription>
-            {activeChat.fileLocked
-              ? `Working against ${activeChat.file?.name ?? "the selected setup"} with full chat history in context.`
-              : "Pick a `.svm` file and send your first message to lock the chat to that setup."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
-            {!activeChat.fileLocked ? (
-              <Field>
-                <FieldLabel>Setup file</FieldLabel>
-                <FieldContent>
-                  <FileSelectRoot
-                    buttonLabel="Choose `.svm` file"
-                    clearable
-                    filters={[
-                      {
-                        name: "Le Mans Ultimate setup",
-                        extensions: ["svm"],
-                      },
-                    ]}
-                    onValueChange={(nextFile) => {
-                      setFile(nextFile);
-                      setError("");
-                    }}
-                    title="Choose a Le Mans Ultimate setup file"
-                    value={file}
-                  >
-                    <div className="flex gap-2">
-                      <Input
-                        type="text"
-                        value={file?.path ?? ""}
-                        disabled
-                        placeholder="No `.svm` file selected"
+                      <Textarea
+                        className="min-h-32"
+                        id="chat-prompt"
+                        name="prompt"
+                        onChange={(event) => {
+                          setPrompt(event.target.value);
+                          setError("");
+                        }}
+                        placeholder="Example: Reduce rear instability on corner exit and soften the front response over curbs."
+                        rows={6}
+                        value={prompt}
                       />
+
+                      <div className="flex justify-center">
+                        <Button disabled={!canSubmit} size="lg" type="submit">
+                          {pending ? "Sending..." : "Send"}
+                        </Button>
+                      </div>
+                      {error ? <FieldError>{error}</FieldError> : null}
+                    </form>
+                  </div>
+                </Card>
+              </div>
+            ) : (
+              renderedMessages.map((message) => {
+                if (message.kind === "user") {
+                  return (
+                    <UserMessage
+                      key={message.id}
+                      message={message.message}
+                      sourceFile={
+                        message.id === firstUserMessageId
+                          ? (activeChat.file ?? composerFile)
+                          : null
+                      }
+                    />
+                  );
+                }
+
+                if (message.kind === "assistant") {
+                  return (
+                    <AssistantMessage
+                      key={message.id}
+                      message={message.message}
+                    />
+                  );
+                }
+
+                return (
+                  <PendingAssistantMessage
+                    key={message.id}
+                    error={message.error}
+                  />
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {!isEmptyChat ? (
+          <div className="shrink-0 border-t border-border/70 bg-card/95 px-4 py-4 backdrop-blur">
+            <form
+              className="mx-auto flex max-w-4xl flex-col gap-3"
+              onSubmit={handleSubmit}
+            >
+              {!activeChat.fileLocked ? (
+                <FileSelectRoot
+                  buttonLabel="Choose `.svm` file"
+                  clearable
+                  filters={sourceFileFilters}
+                  onValueChange={(nextFile) => {
+                    setFile(nextFile);
+                    setError("");
+                  }}
+                  title="Choose a Le Mans Ultimate setup file"
+                  value={file}
+                >
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <PathTooltip path={file?.path ?? null}>
+                        <div className="flex-1">
+                          <Input
+                            disabled
+                            placeholder="Select the initial `.svm` file"
+                            type="text"
+                            value={file?.path ?? ""}
+                          />
+                        </div>
+                      </PathTooltip>
                       <FileSelectClear />
                       <FileSelectTrigger />
                     </div>
-                  </FileSelectRoot>
-                  <FieldDescription>
-                    The first message locks this chat to the selected setup
-                    file.
-                  </FieldDescription>
-                </FieldContent>
-              </Field>
-            ) : (
-              <Field>
-                <FieldLabel>Locked setup file</FieldLabel>
-                <FieldContent>
-                  <Input
-                    disabled
-                    type="text"
-                    value={activeChat.file?.path ?? ""}
-                  />
-                  <FieldDescription>
-                    Follow-up questions keep using this file and the latest
-                    generated setup state.
-                  </FieldDescription>
-                </FieldContent>
-              </Field>
-            )}
+                    <FieldDescription>
+                      The first message locks this chat to the selected setup
+                      file.
+                    </FieldDescription>
+                  </div>
+                </FileSelectRoot>
+              ) : null}
 
-            <Field>
-              <FieldLabel htmlFor="chat-prompt">
-                {activeChat.messageCount === 0 ? "First message" : "Follow-up"}
-              </FieldLabel>
-              <FieldContent>
+              <div className="flex flex-col gap-3 md:flex-row md:items-end">
                 <Textarea
+                  className="min-h-24 flex-1"
                   id="chat-prompt"
                   name="prompt"
                   onChange={(event) => {
@@ -595,77 +823,26 @@ const HomePage = () => {
                     setError("");
                   }}
                   placeholder="Example: Reduce rear instability on corner exit and soften the front response over curbs."
-                  rows={6}
+                  rows={4}
                   value={prompt}
                 />
-                <FieldDescription>
-                  Ask for setup changes in driving terms. The chat keeps the
-                  previous context and latest generated file contents.
-                </FieldDescription>
-              </FieldContent>
-            </Field>
-
-            <div className="flex items-center gap-3">
-              <Button type="submit" disabled={!canSubmit}>
-                {pending
-                  ? "Sending..."
-                  : activeChat.messageCount === 0
-                    ? "Start Chat"
-                    : "Send Follow-up"}
-              </Button>
-              <span className="text-xs text-muted-foreground">
-                Chat history: {chats.length} conversation
-                {chats.length === 1 ? "" : "s"} stored locally in SQLite.
-              </span>
-            </div>
-
-            <FieldError>{error}</FieldError>
-            {saveError ? <FieldError>{saveError}</FieldError> : null}
-            {saveSuccess ? (
-              <p className="text-xs text-muted-foreground">{saveSuccess}</p>
-            ) : null}
-          </form>
-        </CardContent>
-      </Card>
-
-      <div className="flex flex-col gap-4">
-        {renderedMessages.length === 0 ? (
-          <Card className="border-dashed">
-            <CardHeader>
-              <CardTitle>No messages yet</CardTitle>
-              <CardDescription>
-                Your first prompt will appear here with the assistant response
-                and diff preview.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : (
-          renderedMessages.map((message) => {
-            if (message.kind === "user") {
-              return <UserMessage key={message.id} message={message.message} />;
-            }
-
-            if (message.kind === "assistant") {
-              return (
-                <AssistantMessage
-                  key={message.id}
-                  canSave={message.message.id === latestSavableMessage?.id}
-                  fileName={activeChat.file?.name ?? null}
-                  fileSaveFolder={fileSaveFolder}
-                  message={message.message}
-                  onSave={handleSave}
-                  saving={saving}
-                />
-              );
-            }
-
-            return (
-              <PendingAssistantMessage key={message.id} error={message.error} />
-            );
-          })
-        )}
+                <Button
+                  className={cn(
+                    "md:self-stretch",
+                    !activeChat.fileLocked && "md:min-w-28",
+                  )}
+                  disabled={!canSubmit}
+                  type="submit"
+                >
+                  {pending ? "Sending..." : "Send"}
+                </Button>
+              </div>
+              {error ? <FieldError>{error}</FieldError> : null}
+            </form>
+          </div>
+        ) : null}
       </div>
-    </div>
+    </TooltipProvider>
   );
 };
 

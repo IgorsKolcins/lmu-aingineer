@@ -6,12 +6,14 @@ import {
   getChatRequestSchema,
   sendChatMessageRequestSchema,
   setActiveChatRequestSchema,
+  updateChatOutputRequestSchema,
   type ChatStateSnapshot,
   type CreateChatRequest,
   type DeleteChatRequest,
   type GetChatRequest,
   type SendChatMessageRequest,
   type SetActiveChatRequest,
+  type UpdateChatOutputRequest,
 } from "./types";
 
 type ChatsBridge = {
@@ -20,6 +22,9 @@ type ChatsBridge = {
   createChat: (request: CreateChatRequest) => Promise<ChatStateSnapshot>;
   deleteChat: (request: DeleteChatRequest) => Promise<ChatStateSnapshot>;
   setActiveChat: (request: SetActiveChatRequest) => Promise<ChatStateSnapshot>;
+  updateChatOutput: (
+    request: UpdateChatOutputRequest,
+  ) => Promise<ChatStateSnapshot>;
   sendMessage: (request: SendChatMessageRequest) => Promise<ChatStateSnapshot>;
 };
 
@@ -106,6 +111,13 @@ export const refreshActiveChat = (request: GetChatRequest) =>
   runAndReplace(
     readBridge()?.getChat(getChatRequestSchema.parse(request)) ??
       Promise.resolve(currentSnapshot),
+  );
+
+export const updateChatOutput = (request: UpdateChatOutputRequest) =>
+  runAndReplace(
+    readBridge()?.updateChatOutput(
+      updateChatOutputRequestSchema.parse(request),
+    ) ?? Promise.resolve(currentSnapshot),
   );
 
 export const sendChatMessage = (request: SendChatMessageRequest) =>
