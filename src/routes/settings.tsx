@@ -69,7 +69,7 @@ function RouteComponent() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-4">
       <h1>Settings</h1>
       <SettingsGroup title="Theme">
         <SettingsItem>

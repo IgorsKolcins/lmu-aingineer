@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import {
   RiAddLine,
+  RiArrowLeftLine,
   RiDeleteBin6Line,
   RiFileTextLine,
   RiSettings3Line,
 } from "@remixicon/react";
-import { Link, Outlet, createRootRoute } from "@tanstack/react-router";
+import {
+  Link,
+  Outlet,
+  createRootRoute,
+  useRouterState,
+} from "@tanstack/react-router";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,6 +50,10 @@ const RootLayout = () => {
   const { activeChatId, chats } = useChats();
   const [sidebarError, setSidebarError] = useState("");
   const initializedRef = useRef(false);
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  const isSettingsPage = pathname === "/settings";
 
   useEffect(() => {
     if (initializedRef.current || chats.length > 0) {
@@ -172,9 +182,18 @@ const RootLayout = () => {
           </SidebarContent>
           <SidebarFooter className="border-t border-sidebar-border p-4">
             <Button asChild className="w-full justify-start" variant="ghost">
-              <Link to="/settings">
-                <RiSettings3Line />
-                Settings
+              <Link to={isSettingsPage ? "/" : "/settings"}>
+                {isSettingsPage ? (
+                  <>
+                    <RiArrowLeftLine />
+                    Back
+                  </>
+                ) : (
+                  <>
+                    <RiSettings3Line />
+                    Settings
+                  </>
+                )}
               </Link>
             </Button>
           </SidebarFooter>
