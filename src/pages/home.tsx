@@ -315,6 +315,7 @@ const HomePage = () => {
     ].toSorted(compareByCreatedAt);
   }, [activeChat, pendingMessage]);
   const canSubmit = !!activeChat && !!composerFile && !!promptValue && !pending;
+  const isNewChat = activeChat?.messageCount === 0;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -432,6 +433,85 @@ const HomePage = () => {
           </CardDescription>
         </CardHeader>
       </Card>
+    );
+  }
+
+  if (isNewChat) {
+    return (
+      <div className="flex min-h-[calc(100vh-3rem)] items-center justify-center">
+        <Card className="w-full max-w-3xl border-border/70 bg-card/95 shadow-sm">
+          <CardHeader className="items-center gap-3 text-center">
+            <CardTitle className="text-3xl font-semibold tracking-tight">
+              This is your personal AI(e)ngineer.
+            </CardTitle>
+            <CardDescription className="max-w-2xl text-base leading-relaxed text-muted-foreground">
+              Select an initial car setup file, then ask your engineer for
+              suggestions, explanations, or setup changes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="flex flex-col gap-6" onSubmit={handleSubmit}>
+              <Field>
+                <FieldLabel>Initial setup file</FieldLabel>
+                <FieldContent>
+                  <FileSelectRoot
+                    buttonLabel="Select `.svm` file"
+                    clearable
+                    filters={[
+                      {
+                        name: "Le Mans Ultimate setup",
+                        extensions: ["svm"],
+                      },
+                    ]}
+                    onValueChange={(nextFile) => {
+                      setFile(nextFile);
+                      setError("");
+                    }}
+                    title="Choose a Le Mans Ultimate setup file"
+                    value={file}
+                  >
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        value={file?.path ?? ""}
+                        disabled
+                        placeholder="No `.svm` file selected"
+                      />
+                      <FileSelectClear />
+                      <FileSelectTrigger />
+                    </div>
+                  </FileSelectRoot>
+                </FieldContent>
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="chat-prompt">Prompt</FieldLabel>
+                <FieldContent>
+                  <Textarea
+                    id="chat-prompt"
+                    name="prompt"
+                    onChange={(event) => {
+                      setPrompt(event.target.value);
+                      setError("");
+                    }}
+                    placeholder="Example: Reduce rear instability on corner exit and soften the front response over curbs."
+                    rows={6}
+                    value={prompt}
+                  />
+                </FieldContent>
+              </Field>
+
+              <div className="flex justify-center">
+                <Button type="submit" disabled={!canSubmit} size="lg">
+                  {pending ? "Sending..." : "Send"}
+                </Button>
+              </div>
+
+              <FieldError>{error}</FieldError>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
