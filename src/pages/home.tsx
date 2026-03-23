@@ -5,7 +5,7 @@ import {
   RiChat3Line,
   RiFileTextLine,
   RiFolderOpenLine,
-  RiSparklingLine,
+  RiWrenchLine,
 } from "@remixicon/react";
 import { SetupDiffEditor } from "@/components/SetupDiffEditor";
 import {
@@ -130,8 +130,8 @@ const AssistantMessage = ({ message }: { message: ChatMessage }) => {
     <Card className="border-border/70 bg-card">
       <CardHeader className="gap-2">
         <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
-          <RiSparklingLine className="size-4" />
-          Assistant
+          <RiWrenchLine className="size-4" />
+          Engineer
         </div>
         <CardDescription className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
           {body}
@@ -204,8 +204,8 @@ const PendingAssistantMessage = ({ error }: { error?: string | null }) => (
   <Card className="border-border/70 bg-card">
     <CardHeader className="gap-2">
       <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
-        <RiSparklingLine className="size-4" />
-        Assistant
+        <RiWrenchLine className="size-4" />
+        Engineer
       </div>
       {error ? (
         <CardDescription className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
